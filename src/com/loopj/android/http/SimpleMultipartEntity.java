@@ -33,6 +33,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Random;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.message.BasicHeader;
@@ -42,18 +43,20 @@ class SimpleMultipartEntity implements HttpEntity {
 
     private String boundary = null;
 
+    private AsyncHttpResponseHandler progressHandler;
+
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     boolean isSetLast = false;
     boolean isSetFirst = false;
 
-    public SimpleMultipartEntity() {
+    public SimpleMultipartEntity(AsyncHttpResponseHandler progressHandler) {
         final StringBuffer buf = new StringBuffer();
         final Random rand = new Random();
         for (int i = 0; i < 30; i++) {
             buf.append(MULTIPART_CHARS[rand.nextInt(MULTIPART_CHARS.length)]);
         }
         this.boundary = buf.toString();
-
+        this.progressHandler = progressHandler;
     }
 
     public void writeFirstBoundaryIfNeeds(){
@@ -83,7 +86,7 @@ class SimpleMultipartEntity implements HttpEntity {
         } catch (final IOException e) {
             e.printStackTrace();
         }
-        
+
         isSetLast = true;
     }
 
@@ -121,7 +124,7 @@ class SimpleMultipartEntity implements HttpEntity {
                 out.write(tmp, 0, l);
             }
             out.write(("\r\n").getBytes());
-            
+
         } catch (final IOException e) {
             e.printStackTrace();
         } finally {
@@ -170,7 +173,13 @@ class SimpleMultipartEntity implements HttpEntity {
     @Override
     public void writeTo(final OutputStream outstream) throws IOException {
         writeLastBoundaryIfNeeds();
-        outstream.write(out.toByteArray());
+        // outstream.write(out.toByteArray());
+        IOUtils.write(out.toByteArray(), new CountingOutputStream(outstream, new CountingOutputStream.CountingListener() {
+            @Override
+            public void onWriteCount(long count) {
+                progressHandler.onProgress(count, getContentLength());
+            }
+        }));
     }
 
     @Override
@@ -180,17 +189,17 @@ class SimpleMultipartEntity implements HttpEntity {
 
     @Override
     public void consumeContent() throws IOException,
-    UnsupportedOperationException {
+            UnsupportedOperationException {
         if (isStreaming()) {
             throw new UnsupportedOperationException(
-            "Streaming entity does not implement #consumeContent()");
+                    "Streaming entity does not implement #consumeContent()");
         }
     }
 
     @Override
     public InputStream getContent() throws IOException,
-    UnsupportedOperationException {
-    	writeLastBoundaryIfNeeds();
+            UnsupportedOperationException {
+        writeLastBoundaryIfNeeds();
         return new ByteArrayInputStream(out.toByteArray());
     }
 }

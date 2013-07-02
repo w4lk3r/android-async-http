@@ -236,7 +236,7 @@ public class AsyncHttpClient {
     public void setSSLSocketFactory(SSLSocketFactory sslSocketFactory) {
         this.httpClient.getConnectionManager().getSchemeRegistry().register(new Scheme("https", sslSocketFactory, 443));
     }
-    
+
     /**
      * Sets headers that will be added to all requests this client makes (before sending).
      * @param header the name of the header
@@ -256,7 +256,7 @@ public class AsyncHttpClient {
         AuthScope scope = AuthScope.ANY;
         setBasicAuth(user, pass, scope);
     }
-    
+
    /**
      * Sets basic authentication for the request. You should pass in your AuthScope for security. It should be like this
      * setBasicAuth("username","password", new AuthScope("host",port,AuthScope.ANY_REALM))
@@ -339,11 +339,11 @@ public class AsyncHttpClient {
     public void get(Context context, String url, RequestParams params, AsyncHttpResponseHandler responseHandler) {
         sendRequest(httpClient, httpContext, new HttpGet(getUrlWithQueryString(url, params)), null, responseHandler, context);
     }
-    
+
     /**
      * Perform a HTTP GET request and track the Android Context which initiated
      * the request with customized headers
-     * 
+     *
      * @param url the URL to send the request to.
      * @param headers set headers only for this request
      * @param params additional GET parameters to send with the request.
@@ -389,7 +389,7 @@ public class AsyncHttpClient {
      * @param responseHandler the response handler instance that should handle the response.
      */
     public void post(Context context, String url, RequestParams params, AsyncHttpResponseHandler responseHandler) {
-        post(context, url, paramsToEntity(params), null, responseHandler);
+        post(context, url, paramsToEntity(params, responseHandler), null, responseHandler);
     }
 
     /**
@@ -407,7 +407,7 @@ public class AsyncHttpClient {
     /**
      * Perform a HTTP POST request and track the Android Context which initiated
      * the request. Set headers only for this request
-     * 
+     *
      * @param context the Android Context which initiated the request.
      * @param url the URL to send the request to.
      * @param headers set headers only for this request
@@ -418,9 +418,9 @@ public class AsyncHttpClient {
      *        the response.
      */
     public void post(Context context, String url, Header[] headers, RequestParams params, String contentType,
-            AsyncHttpResponseHandler responseHandler) {
+                     AsyncHttpResponseHandler responseHandler) {
         HttpEntityEnclosingRequestBase request = new HttpPost(url);
-        if(params != null) request.setEntity(paramsToEntity(params));
+        if(params != null) request.setEntity(paramsToEntity(params, responseHandler));
         if(headers != null) request.setHeaders(headers);
         sendRequest(httpClient, httpContext, request, contentType,
                 responseHandler, context);
@@ -442,7 +442,7 @@ public class AsyncHttpClient {
      *        the response.
      */
     public void post(Context context, String url, Header[] headers, HttpEntity entity, String contentType,
-            AsyncHttpResponseHandler responseHandler) {
+                     AsyncHttpResponseHandler responseHandler) {
         HttpEntityEnclosingRequestBase request = addEntityToRequestBase(new HttpPost(url), entity);
         if(headers != null) request.setHeaders(headers);
         sendRequest(httpClient, httpContext, request, contentType, responseHandler, context);
@@ -479,7 +479,7 @@ public class AsyncHttpClient {
      * @param responseHandler the response handler instance that should handle the response.
      */
     public void put(Context context, String url, RequestParams params, AsyncHttpResponseHandler responseHandler) {
-        put(context, url, paramsToEntity(params), null, responseHandler);
+        put(context, url, paramsToEntity(params, responseHandler), null, responseHandler);
     }
 
     /**
@@ -494,7 +494,7 @@ public class AsyncHttpClient {
     public void put(Context context, String url, HttpEntity entity, String contentType, AsyncHttpResponseHandler responseHandler) {
         sendRequest(httpClient, httpContext, addEntityToRequestBase(new HttpPut(url), entity), contentType, responseHandler, context);
     }
-    
+
     /**
      * Perform a HTTP PUT request and track the Android Context which initiated the request.
      * And set one-time headers for the request
@@ -534,7 +534,7 @@ public class AsyncHttpClient {
         final HttpDelete delete = new HttpDelete(url);
         sendRequest(httpClient, httpContext, delete, null, responseHandler, context);
     }
-    
+
     /**
      * Perform a HTTP DELETE request.
      * @param context the Android Context which initiated the request.
@@ -584,11 +584,11 @@ public class AsyncHttpClient {
         return url;
     }
 
-    private HttpEntity paramsToEntity(RequestParams params) {
+    private HttpEntity paramsToEntity(RequestParams params, AsyncHttpResponseHandler responseHandler) {
         HttpEntity entity = null;
 
         if(params != null) {
-            entity = params.getEntity();
+            entity = params.getEntity(responseHandler);
         }
 
         return entity;

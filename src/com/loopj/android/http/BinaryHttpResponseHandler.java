@@ -19,22 +19,22 @@
 package com.loopj.android.http;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.regex.Pattern;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.client.HttpResponseException;
-import org.apache.http.entity.BufferedHttpEntity;
-import org.apache.http.util.EntityUtils;
 
 import android.os.Message;
 
 /**
  * Used to intercept and handle the responses from requests made using
- * {@link AsyncHttpClient}. Receives response body as byte array with a 
- * content-type whitelist. (e.g. checks Content-Type against allowed list, 
+ * {@link AsyncHttpClient}. Receives response body as byte array with a
+ * content-type whitelist. (e.g. checks Content-Type against allowed list,
  * Content-length).
  * <p>
  * For example:
@@ -119,11 +119,6 @@ public class BinaryHttpResponseHandler extends AsyncHttpResponseHandler {
         sendMessage(obtainMessage(SUCCESS_MESSAGE, new Object[]{statusCode, responseBody}));
     }
 
-    @Override
-    protected void sendFailureMessage(Throwable e, byte[] responseBody) {
-        sendMessage(obtainMessage(FAILURE_MESSAGE, new Object[]{e, responseBody}));
-    }
-
     //
     // Pre-processing of messages (in original calling thread, typically the UI thread)
     //
@@ -143,11 +138,11 @@ public class BinaryHttpResponseHandler extends AsyncHttpResponseHandler {
         switch(msg.what) {
             case SUCCESS_MESSAGE:
                 response = (Object[])msg.obj;
-                handleSuccessMessage(((Integer) response[0]).intValue() , (byte[]) response[1]);
+                handleSuccessMessage(((Integer) response[0]).intValue(), (byte[]) response[1]);
                 break;
             case FAILURE_MESSAGE:
                 response = (Object[])msg.obj;
-                handleFailureMessage((Throwable)response[0], response[1].toString());
+                handleFailureMessage((Throwable)response[0], response[1] == null ? "" : response[1].toString());
                 break;
             default:
                 super.handleMessage(msg);
@@ -178,15 +173,23 @@ public class BinaryHttpResponseHandler extends AsyncHttpResponseHandler {
             sendFailureMessage(new HttpResponseException(status.getStatusCode(), "Content-Type not allowed!"), responseBody);
             return;
         }
+        InputStream inputStream = null;
         try {
-            HttpEntity entity = null;
-            HttpEntity temp = response.getEntity();
+            final HttpEntity temp = response.getEntity();
             if(temp != null) {
-                entity = new BufferedHttpEntity(temp);
+                inputStream = new CountingInputStream(temp.getContent(), new CountingInputStream.CountingListener() {
+                    @Override
+                    public void onReadCount(long count) {
+                        sendProgressMessage(count, temp.getContentLength());
+                    }
+                });
+
+                responseBody = IOUtils.toByteArray(inputStream);
             }
-            responseBody = EntityUtils.toByteArray(entity);
         } catch(IOException e) {
             sendFailureMessage(e, (byte[]) null);
+        } finally {
+            IOUtils.closeQuietly(inputStream);
         }
 
         if(status.getStatusCode() >= 300) {

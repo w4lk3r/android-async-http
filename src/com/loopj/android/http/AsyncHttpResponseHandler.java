@@ -21,14 +21,16 @@ package com.loopj.android.http;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
+
 import java.io.IOException;
+import java.io.InputStream;
+
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.client.HttpResponseException;
-import org.apache.http.entity.BufferedHttpEntity;
-import org.apache.http.util.EntityUtils;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -36,7 +38,7 @@ import android.os.Message;
 
 /**
  * Used to intercept and handle the responses from requests made using 
- * {@link AsyncHttpClient}. The {@link #onSuccess(String)} method is 
+ * {@link AsyncHttpClient}. The {@link #onSuccess(String)} method is
  * designed to be anonymously overridden with your own response handling code.
  * <p>
  * Additionally, you can override the {@link #onFailure(Throwable, String)},
@@ -56,7 +58,7 @@ import android.os.Message;
  *     public void onSuccess(String response) {
  *         // Successfully got a response
  *     }
- * 
+ *
  *     &#064;Override
  *     public void onFailure(Throwable e, String response) {
  *         // Response failed :(
@@ -74,8 +76,10 @@ public class AsyncHttpResponseHandler {
     protected static final int FAILURE_MESSAGE = 1;
     protected static final int START_MESSAGE = 2;
     protected static final int FINISH_MESSAGE = 3;
+    protected static final int PROGRESS_MESSAGE = 4;
 
     private Handler handler;
+    protected String url;
 
     /**
      * Creates a new AsyncHttpResponseHandler
@@ -151,6 +155,10 @@ public class AsyncHttpResponseHandler {
         onFailure(error);
     }
 
+    /**
+     * Fired when the request progress, override to handle in your own code
+     */
+    public void onProgress(long position, long length) {}
 
     //
     // Pre-processing of messages (executes in background threadpool thread)
@@ -163,7 +171,7 @@ public class AsyncHttpResponseHandler {
     protected void sendFailureMessage(Throwable e, String responseBody) {
         sendMessage(obtainMessage(FAILURE_MESSAGE, new Object[]{e, responseBody}));
     }
-    
+
     protected void sendFailureMessage(Throwable e, byte[] responseBody) {
         sendMessage(obtainMessage(FAILURE_MESSAGE, new Object[]{e, responseBody}));
     }
@@ -176,6 +184,9 @@ public class AsyncHttpResponseHandler {
         sendMessage(obtainMessage(FINISH_MESSAGE, null));
     }
 
+    protected void sendProgressMessage(long position, long length) {
+        sendMessage(obtainMessage(PROGRESS_MESSAGE, new Object[]{position, length}));
+    }
 
     //
     // Pre-processing of messages (in original calling thread, typically the UI thread)
@@ -202,13 +213,17 @@ public class AsyncHttpResponseHandler {
                 break;
             case FAILURE_MESSAGE:
                 response = (Object[])msg.obj;
-                handleFailureMessage((Throwable)response[0], (String)response[1]);
+                handleFailureMessage((Throwable)response[0], (String) response[1]);
                 break;
             case START_MESSAGE:
                 onStart();
                 break;
             case FINISH_MESSAGE:
                 onFinish();
+                break;
+            case PROGRESS_MESSAGE:
+                response = (Object[])msg.obj;
+                onProgress(((Long)response[0]).longValue(), ((Long)response[1]).longValue());
                 break;
         }
     }
@@ -237,15 +252,23 @@ public class AsyncHttpResponseHandler {
     void sendResponseMessage(HttpResponse response) {
         StatusLine status = response.getStatusLine();
         String responseBody = null;
+        InputStream inputStream = null;
         try {
-            HttpEntity entity = null;
-            HttpEntity temp = response.getEntity();
+            final HttpEntity temp = response.getEntity();
             if(temp != null) {
-                entity = new BufferedHttpEntity(temp);
-                responseBody = EntityUtils.toString(entity, "UTF-8");
+                inputStream = new CountingInputStream(temp.getContent(), new CountingInputStream.CountingListener() {
+                    @Override
+                    public void onReadCount(long count) {
+                        sendProgressMessage(count, temp.getContentLength());
+                    }
+                });
+
+                responseBody = IOUtils.toString(inputStream);
             }
         } catch(IOException e) {
             sendFailureMessage(e, (String) null);
+        } finally {
+            IOUtils.closeQuietly(inputStream);
         }
 
         if(status.getStatusCode() >= 300) {
@@ -253,5 +276,10 @@ public class AsyncHttpResponseHandler {
         } else {
             sendSuccessMessage(status.getStatusCode(), response.getAllHeaders(), responseBody);
         }
+    }
+
+    public AsyncHttpResponseHandler with(String url) {
+        this.url = url;
+        return this;
     }
 }
